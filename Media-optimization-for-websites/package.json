@@ -10,7 +10,19 @@
     "optimize:dry": "node convert-media.js --source ./public --output ./public-optimized --dry-run",
     "optimize:continue": "node convert-media.js --source ./public --output ./public-optimized --continue",
     "optimize:images-only": "node convert-media.js --source ./public --skip-videos",
-    "optimize:videos-only": "node convert-media.js --source ./public --skip-images"
+    "optimize:videos-only": "node convert-media.js --source ./public --skip-images",
+    "comment_CPU_Scripts": "======== CPU Mode (libx264/libvpx-vp9) ========",
+    "optimize:cpu": "node convert-media-cpu.js --source ./public --output ./public-optimized",
+    "optimize:cpu:dry": "node convert-media-cpu.js --source ./public --output ./public-optimized --dry-run",
+    "optimize:cpu:continue": "node convert-media-cpu.js --source ./public --output ./public-optimized --continue",
+    "optimize:cpu:images-only": "node convert-media-cpu.js --source ./public --skip-videos",
+    "optimize:cpu:videos-only": "node convert-media-cpu.js --source ./public --skip-images",
+    "comment_GPU_Scripts": "======== GPU Mode (AMD HEVC AMF) ========",
+    "optimize:gpu": "node convert-media-gpu.js --source ./public --output ./public-optimized",
+    "optimize:gpu:dry": "node convert-media-gpu.js --source ./public --output ./public-optimized --dry-run",
+    "optimize:gpu:continue": "node convert-media-gpu.js --source ./public --output ./public-optimized --continue",
+    "optimize:gpu:images-only": "node convert-media-gpu.js --source ./public --skip-videos",
+    "optimize:gpu:videos-only": "node convert-media-gpu.js --source ./public --skip-images"
   },
   "keywords": [
     "media",
