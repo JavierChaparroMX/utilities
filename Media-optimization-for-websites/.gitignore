@@ -1,0 +1,67 @@
+# Dependencies
+node_modules/
+package-lock.json
+yarn.lock
+pnpm-lock.yaml
+
+# Build and Output
+dist/
+build/
+.next/
+out/
+
+# Optimization Output
+public-optimized/
+images-optimized/
+videos-optimized/
+*-optimized/
+*.log
+.conversion-state.json
+
+# Environment
+.env
+.env.local
+.env*.local
+.env.production.local
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+Thumbs.db
+
+# OS Files
+.DS_Store
+.AppleDouble
+.LSOverride
+*.class
+.gradle/
+.clj-kondo
+
+# Testing
+coverage/
+.nyc_output/
+
+# Debugging
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Cache
+.eslintcache
+.stylelintcache
+
+# Temporary files
+*.tmp
+*.bak
+temp/
+tmp/
+
+# Keep these files
+!.gitignore
+!README.md
+!package.json
+!convert-media.js

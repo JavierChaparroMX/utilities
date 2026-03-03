@@ -1,0 +1,168 @@
+{
+  "conversionProfiles": {
+    "default": {
+      "description": "Balanced quality and compression (recommended)",
+      "imageQuality": 80,
+      "videoQuality": 28,
+      "parallel": 4
+    },
+    "highQuality": {
+      "description": "Maximum quality, larger files (high-end devices/archive)",
+      "imageQuality": 90,
+      "videoQuality": 24,
+      "parallel": 2
+    },
+    "balanced": {
+      "description": "Good balance between quality and size",
+      "imageQuality": 80,
+      "videoQuality": 28,
+      "parallel": 4
+    },
+    "aggressive": {
+      "description": "Aggressive compression for fast loading/mobile",
+      "imageQuality": 70,
+      "videoQuality": 32,
+      "parallel": 8
+    },
+    "mobile": {
+      "description": "Optimized for mobile networks (slow connections)",
+      "imageQuality": 65,
+      "videoQuality": 35,
+      "parallel": 2
+    },
+    "archive": {
+      "description": "Maximum quality for archival/future-proofing",
+      "imageQuality": 95,
+      "videoQuality": 20,
+      "parallel": 1
+    }
+  },
+  "presets": {
+    "ecommerce": {
+      "description": "E-commerce sites (product images, quick load times)",
+      "profile": "balanced",
+      "skipImages": false,
+      "skipVideos": false,
+      "imageMinSize": 102400,
+      "videoMinSize": 2097152
+    },
+    "contentSite": {
+      "description": "Blog/news sites (high image volume)",
+      "profile": "aggressive",
+      "skipImages": false,
+      "skipVideos": true,
+      "imageMinSize": 51200,
+      "videoMinSize": 5242880
+    },
+    "videoProduction": {
+      "description": "Video-heavy sites (streaming, portfolios)",
+      "profile": "balanced",
+      "skipImages": false,
+      "skipVideos": false,
+      "imageMinSize": 102400,
+      "videoMinSize": 1048576
+    },
+    "portfolio": {
+      "description": "Designer/photographer portfolio",
+      "profile": "highQuality",
+      "skipImages": false,
+      "skipVideos": false,
+      "imageMinSize": 204800,
+      "videoMinSize": 2097152
+    },
+    "corporate": {
+      "description": "Corporate/business site",
+      "profile": "balanced",
+      "skipImages": false,
+      "skipVideos": false,
+      "imageMinSize": 102400,
+      "videoMinSize": 2097152
+    }
+  },
+  "directories": {
+    "imageSource": [
+      "/public/images",
+      "/public/services",
+      "/public/reviews",
+      "/public/assets/images"
+    ],
+    "videoSource": [
+      "/public/services",
+      "/public/videos",
+      "/public/assets/videos"
+    ],
+    "imageOutput": "images-optimized",
+    "videoOutput": "videos-optimized",
+    "mobileVideoOutput": "videos-optimized/mobile"
+  },
+  "formats": {
+    "images": {
+      "source": [".jpg", ".jpeg", ".png", ".gif"],
+      "target": [".webp", ".png"]
+    },
+    "videos": {
+      "source": [".mp4", ".mov", ".avi", ".webm", ".flv", ".mkv"],
+      "target": [".mp4", ".webm"]
+    }
+  },
+  "optimization": {
+    "images": {
+      "webpQuality": {
+        "default": 80,
+        "aggressive": 70,
+        "highQuality": 90
+      },
+      "pngCompressionLevel": 9,
+      "animatedGifToVideo": true,
+      "createPngFallback": true,
+      "minSizeForConversion": 102400
+    },
+    "videos": {
+      "videoCodec": "libx264",
+      "audioCodec": "aac",
+      "audioBitrate": "128k",
+      "audioSampleRate": 48000,
+      "webmCodec": "libvpx-vp9",
+      "webmAudioCodec": "libopus",
+      "createMobileVariant": true,
+      "mobileWidth": 640,
+      "maxDesktopWidth": 1920,
+      "videoPreset": "medium",
+      "minSizeForConversion": 2097152,
+      "supportedFormats": {
+        "source": ["mp4", "mov", "avi", "webm", "flv", "mkv"],
+        "target": ["mp4", "webm"]
+      }
+    }
+  },
+  "processing": {
+    "parallelWorkers": 4,
+    "timeout": 3600000,
+    "retryFailed": true,
+    "maxRetries": 3
+  },
+  "reporting": {
+    "generateJsonReport": true,
+    "generateHtmlReport": true,
+    "generateLog": true,
+    "detailedLogging": false,
+    "includeComparisons": true
+  },
+  "validation": {
+    "verifyConvertedFiles": true,
+    "checkMinimumQuality": true,
+    "validateFormats": true,
+    "checkFileSizes": true
+  },
+  "examples": {
+    "basicUsage": "node convert-media.js",
+    "dryRun": "node convert-media.js --dry-run",
+    "customQuality": "node convert-media.js --image-quality 75 --video-quality 30",
+    "aggressiveCompression": "node convert-media.js --image-quality 65 --video-quality 35 --parallel 8",
+    "highQuality": "node convert-media.js --image-quality 90 --video-quality 24",
+    "resume": "node convert-media.js --continue",
+    "imagesOnly": "node convert-media.js --skip-videos",
+    "videosOnly": "node convert-media.js --skip-images",
+    "customDirectories": "node convert-media.js --source ./assets --output ./assets-optimized"
+  }
+}
