@@ -1,0 +1,12 @@
+$WSUS = "http://10.0.0.10:8530"
+
+Set-ItemProperty -Path "HKLM:\Software\Policies\Microsoft\Windows\WindowsUpdate" `
+    -Name WUServer -Value $WSUS
+
+Set-ItemProperty -Path "HKLM:\Software\Policies\Microsoft\Windows\WindowsUpdate" `
+    -Name WUStatusServer -Value $WSUS
+
+New-ItemProperty -Path "HKLM:\Software\Policies\Microsoft\Windows\WindowsUpdate\AU" `
+    -Name UseWUServer -PropertyType DWord -Value 1 -Force
+
+Restart-Service wuauserv -Force

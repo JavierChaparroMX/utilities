@@ -1,0 +1,43 @@
+<#
+.SYNOPSIS
+    Configures Windows Update and proxy settings across Failover Cluster nodes.
+
+.DESCRIPTION
+    This script configures all nodes in a failover cluster to use a specific 
+    Windows Server Update Services (WSUS) server for updates and sets the WinHTTP 
+    proxy settings for Windows Update communications. This is typically used in 
+    environments where cluster nodes must route updates through an internal WSUS 
+    server and/or proxy infrastructure.
+
+.NOTES
+    - Requires local administrative privileges on the cluster and all nodes
+    - The script runs on cluster nodes via Invoke-Command
+    - After configuration, the Windows Update service is restarted to apply changes
+    - Current proxy settings are displayed for verification on each node
+#>
+
+$ClusterName = "Failover-Cluster01" #Replace with your Hyper-V Failover Cluster name
+$WSUSServer = "http://192.168.0.100:8530" #Replace IP address of your WSUS Server here
+
+
+
+
+$Proxy = $WSUSServer -replace "http://", ""
+$Nodes = (Get-ClusterNode -Cluster $ClusterName).Name
+
+Invoke-Command -ComputerName $Nodes -ScriptBlock {
+    param($WSUSServer,$Proxy)
+
+    New-Item -Path "HKLM:\Software\Policies\Microsoft\Windows\WindowsUpdate" -Force | Out-Null
+    New-Item -Path "HKLM:\Software\Policies\Microsoft\Windows\WindowsUpdate\AU" -Force | Out-Null
+
+    Set-ItemProperty -Path "HKLM:\Software\Policies\Microsoft\Windows\WindowsUpdate" -Name WUServer -Value $WSUSServer
+    Set-ItemProperty -Path "HKLM:\Software\Policies\Microsoft\Windows\WindowsUpdate" -Name WUStatusServer -Value $WSUSServer
+    Set-ItemProperty -Path "HKLM:\Software\Policies\Microsoft\Windows\WindowsUpdate\AU" -Name UseWUServer -Value 1 -Type DWord
+
+    netsh winhttp set proxy $Proxy
+    Restart-Service wuauserv -Force
+
+    Write-Output "---- $env:COMPUTERNAME ----"
+    netsh winhttp show proxy
+} -ArgumentList $WSUSServer,$Proxy
