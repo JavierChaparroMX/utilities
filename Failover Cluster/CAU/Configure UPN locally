@@ -1,12 +1,31 @@
-$WSUS = "http://10.0.0.10:8530"
+<#
+.SYNOPSIS
+    Configures Windows Update and proxy settings on the local machine.
+
+.DESCRIPTION
+    This script configures the local computer to use a specific Windows Server 
+    Update Services (WSUS) server for updates and sets the WinHTTP proxy settings. 
+    It's useful for standalone computers or when you need to configure a single 
+    node before adding it to a cluster, or for testing purposes.
+
+.NOTES
+    - Requires local administrative privileges
+    - The Windows Update service (wuauserv) is restarted to apply changes
+    - Current proxy settings are displayed for verification
+    - Service status is checked at the end
+#>
+
+$WSUS = "http://10.0.0.10:8530" #Replace with your WSUS server address
+
 
 Set-ItemProperty -Path "HKLM:\Software\Policies\Microsoft\Windows\WindowsUpdate" `
     -Name WUServer -Value $WSUS
-
 Set-ItemProperty -Path "HKLM:\Software\Policies\Microsoft\Windows\WindowsUpdate" `
     -Name WUStatusServer -Value $WSUS
-
 New-ItemProperty -Path "HKLM:\Software\Policies\Microsoft\Windows\WindowsUpdate\AU" `
     -Name UseWUServer -PropertyType DWord -Value 1 -Force
-
 Restart-Service wuauserv -Force
+$Proxy = $WSUS -replace "http://", ""
+netsh winhttp set proxy $Proxy
+netsh winhttp show proxy
+Get-Service wuauserv
