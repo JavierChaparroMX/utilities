@@ -1,25 +1,144 @@
 <#
 .SYNOPSIS
-  Enhanced script: Prepares all nodes in a Failover Cluster for Cluster-Aware Updating (CAU):
-  - Fixes WinRM/PS Remoting on nodes (Address=* listener, firewall, Kerberos)
-  - Optionally sets cluster network roles (iSCSI -> Role=0; Mgmt -> Role=3)
-  - Includes comprehensive logging, pre-flight validation, and error recovery
+  Preparation script: Configures all nodes in a Failover Cluster for Cluster-Aware Updating (CAU).
+  PREREQUISITE: Run Discover-ClusterCAUReadiness.ps1 first to identify current configuration.
+  
+  This script can make DESTRUCTIVE CHANGES to WinRM, listeners, and network roles if run 
+  without understanding your infrastructure. Always use -DryRun first to preview changes.
 
 .DESCRIPTION
-  CAU relies on WMIv2/CIM over WinRM. Misconfigured listeners (e.g., IP-bound) or
-  using iSCSI networks for cluster communication cause CAU readiness failures.
-  This script enforces a healthy WinRM configuration on every node and
-  aligns cluster network roles so CAU uses the management path.
+  CAU relies on WMIv2/CIM over WinRM. Misconfigured listeners (e.g., IP-bound) or using
+  iSCSI networks for cluster communication cause CAU readiness failures.
+  
+  This script enforces a healthy WinRM configuration on every node and optionally aligns
+  cluster network roles to use the management path for CAU communication.
 
   Enhanced features:
   - Pre-flight cluster health and privilege validation
+  - Option to run in read-only DRY-RUN mode to preview changes (-DryRun)
+  - Option to detect Group Policy conflicts (-DetectGPOConflicts)
+  - Option to preserve legacy IP-bound listeners (-PreserveLegacyListeners)
+  - Option to enforce strict security OR skip hardening (-EnforceStrictWinRMSecurity, off by default)
   - Comprehensive logging to file with audit trail
   - Per-node error recovery (continues if one node fails)
-  - Configuration backup and restore capability
+  - Configuration backup and restore capability (-BackupConfig)
   - Remote command timeout handling
   - Detailed success/failure reporting
-  - Dry-run mode for safe testing (-DryRun switch)
-  - Post-execution validation
+
+  RISK MITIGATIONS vs. original script:
+  - PSRemoting check before restart (avoids unnecessary WinRM restart)
+  - Listener deletion warning with preservation option
+  - Auth hardening is OPT-IN, not automatic
+  - GPO policy conflict detection
+  - Network role changes include critical warnings
+
+.PARAMETER ClusterName
+  Name of the WSFC cluster. If omitted, script attempts to infer from local node.
+
+.PARAMETER StorageNetworks
+  Array of cluster network names dedicated to iSCSI/storage.
+  WARNING: Setting Role=0 means cluster heartbeats will NOT use this network.
+  These will be set to Role=0 (Do NOT allow cluster communication).
+  Must verify network names match your actual infrastructure.
+
+.PARAMETER ManagementNetwork
+  The management network name to set to Role=3 (ClusterAndClient).
+  This is where CAU will communicate with cluster nodes.
+
+.PARAMETER DelayedAutoStartWinRM
+  Also set WinRM service to Delayed Auto Start (optional).
+
+.PARAMETER SkipNetworkRoleChanges
+  Skip changing cluster network roles (only fix WinRM configuration).
+  Use this if you want to test WinRM fixes separately from network changes.
+
+.PARAMETER EnforceStrictWinRMSecurity
+  OPT-IN flag to enforce Kerberos-only authentication, disable Basic Auth,
+  and disable unencrypted traffic. This is a security best practice but WILL 
+  break legacy monitoring tools (SolarWinds, PRTG, etc.) that rely on Basic Auth 
+  or unencrypted HTTP WinRM connections. Only enable after confirming monitoring 
+  team compatibility.
+
+.PARAMETER DetectGPOConflicts
+  Check for Group Policy WinRM/Firewall settings before making changes.
+  If found, warns that local changes may be overwritten at next GPO refresh cycle
+  (typically 90-120 minutes). Recommends coordinating with domain/GPO administrators
+  to implement changes via Group Policy instead (more persistent and manageable).
+
+.PARAMETER PreserveLegacyListeners
+  If IP-bound WinRM listeners exist, preserve them instead of deleting them.
+  Use this if your organization has strict security policies requiring WinRM
+  to bind only to specific management IP addresses or VLANs.
+  Wildcard listener will still be created, but IP-bound listeners will NOT be deleted.
+
+.PARAMETER LogPath
+  Path to log file. Defaults to script directory/Logs/Prepare-ClusterForCAU-YYYYMMDD-HHMMSS.log
+
+.PARAMETER DryRun
+  Simulate all changes without actually modifying settings. Shows what would happen.
+  HIGHLY RECOMMENDED: Always run with -DryRun first to preview changes and verify
+  network names and configurations before executing actual modifications.
+
+.PARAMETER CommandTimeout
+  Timeout in seconds for remote commands. Default: 300 (5 minutes).
+
+.PARAMETER SkipValidation
+  Skip pre-flight validation checks (not recommended for production).
+
+.PARAMETER BackupConfig
+  Backup WinRM configuration before making changes. Stored in node backup directory.
+  Enables rollback capability if needed.
+
+.PARAMETER RestoreFromBackup
+  Restore WinRM configuration from a previous backup instead of making changes.
+  Useful for reverting if changes cause issues.
+
+.EXAMPLE
+  # STEP 1: Run read-only discovery (no risk)
+  .\Discover-ClusterCAUReadiness.ps1 -ClusterName "PROD-Cluster"
+  
+  # STEP 2: Review CSV/JSON output reports
+  # Identify current state, GPO policies, monitoring agents, network configs
+  
+  # STEP 3: Coordinate with infrastructure teams
+  # Discuss findings, network stability requirements, monitoring compatibility
+  
+  # STEP 4: Dry-run to preview changes (safe, read-only test)
+  .\Prepare-ClusterForCAU.ps1 -ClusterName "PROD-Cluster" -DryRun -DetectGPOConflicts
+  
+  # STEP 5: Conservative production run (fix WinRM, preserve legacy listeners)
+  .\Prepare-ClusterForCAU.ps1 -ClusterName "PROD-Cluster" `
+    -StorageNetworks "10.0.10.X (Storage1)","10.0.20.X (Storage2)" `
+    -ManagementNetwork "10.0.1.X (Management)" `
+    -PreserveLegacyListeners `
+    -BackupConfig `
+    -LogPath "C:\Logs\CAU-Prep.log"
+
+  # ALTERNATIVE: Advanced run with security hardening (opt-in)
+  # Only after confirming monitoring solution compatibility
+  .\Prepare-ClusterForCAU.ps1 -ClusterName "PROD-Cluster" `
+    -StorageNetworks "10.0.10.X (Storage1)" `
+    -ManagementNetwork "10.0.1.X (Management)" `
+    -EnforceStrictWinRMSecurity `
+    -DetectGPOConflicts `
+    -BackupConfig `
+    -DelayedAutoStartWinRM
+
+.NOTES
+  Tested on Windows Server 2019/2022.
+  Requires cluster admin privileges and FailoverClusters module.
+  
+  CRITICAL: Always review discovery output before running in production.
+  IMPORTANT: Always run with -DryRun FIRST to validate against your cluster.
+  SAFETY: Use -PreserveLegacyListeners if your org has strict listener policies.
+  SECURITY: Only use -EnforceStrictWinRMSecurity after coordinating with all teams.
+  
+  WORKFLOW RECOMMENDATIONS:
+  - Safety: Run discovery script, review reports, coordinate with teams, then execute
+  - Testing: Always use -DryRun in production first
+  - Rollback: Use -BackupConfig and -RestoreFromBackup if issues occur
+  - GPO: Consider implementing changes via Group Policy instead of scripts (more persistent)
+#>
 
 .PARAMETER ClusterName
   Name of the WSFC cluster. If omitted, script attempts to infer from local node.
@@ -36,6 +155,22 @@
 
 .PARAMETER SkipNetworkRoleChanges
   Skip changing cluster network roles (only fix WinRM).
+
+.PARAMETER EnforceStrictWinRMSecurity
+  CAUTION: Opt-in flag to enforce Kerberos-only authentication, disable Basic Auth
+  and unencrypted traffic. This is a security best practice but WILL break legacy
+  monitoring tools (SolarWinds, PRTG, etc.) that rely on Basic Auth or unencrypted HTTP.
+  Requires explicit user intent - not enabled by default.
+
+.PARAMETER DetectGPOConflicts
+  Check for Group Policy WinRM/Firewall settings before making changes.
+  If GPO policies are found, warns that local changes may be overwritten at next refresh.
+  Recommends coordinating with domain admins to implement changes via GPO instead.
+
+.PARAMETER PreserveLegacyListeners
+  If IP-bound WinRM listeners exist, preserve them instead of replacing with wildcard.
+  Use this if your organization has strict security policies requiring IP binding.
+  Wildcard listener will still be created, but IP-bound listeners will NOT be deleted.
 
 .PARAMETER LogPath
   Path to log file. Defaults to script directory/Logs/Prepare-ClusterForCAU-YYYYMMDD-HHMMSS.log
@@ -56,16 +191,31 @@
   Restore WinRM configuration from a previous backup instead of making changes.
 
 .EXAMPLE
+  # RECOMMENDED: Run discovery script first (read-only, safe)
+  .\Discover-ClusterCAUReadiness.ps1 -ClusterName "PROD-Cluster"
+  
+  # Review the discovery reports to understand current configuration
+  # Then coordinate with relevant infrastructure teams (GPO, monitoring, etc.)
+  
   # Dry-run to see what would happen
-  .\Prepare-ClusterForCAU.ps1 -ClusterName "PROD-Cluster" -DryRun
+  .\Prepare-ClusterForCAU.ps1 -ClusterName "PROD-Cluster" -DryRun -DetectGPOConflicts
 
-  # Production run with full logging and backup
+  # Conservative run: Fix WinRM but preserve IP-bound listeners
   .\Prepare-ClusterForCAU.ps1 -ClusterName "PROD-Cluster" `
     -StorageNetworks "10.0.10.X (Storage1)","10.0.20.X (Storage2)" `
     -ManagementNetwork "10.0.1.X (Management)" `
-    -DelayedAutoStartWinRM `
+    -PreserveLegacyListeners `
     -BackupConfig `
     -LogPath "C:\Logs\CAU-Prep.log"
+
+  # Advanced: Full hardening with monitoring awareness (opt-in)
+  .\Prepare-ClusterForCAU.ps1 -ClusterName "PROD-Cluster" `
+    -StorageNetworks "10.0.10.X (Storage1)" `
+    -ManagementNetwork "10.0.1.X (Management)" `
+    -EnforceStrictWinRMSecurity `
+    -DetectGPOConflicts `
+    -BackupConfig `
+    -DelayedAutoStartWinRM
 
 .NOTES
   Tested on Windows Server 2019/2022.
@@ -86,6 +236,9 @@ param(
 
     [switch]$DelayedAutoStartWinRM,
     [switch]$SkipNetworkRoleChanges,
+    [switch]$EnforceStrictWinRMSecurity,
+    [switch]$DetectGPOConflicts,
+    [switch]$PreserveLegacyListeners,
 
     [Parameter(Mandatory=$false)]
     [string]$LogPath,
@@ -104,6 +257,32 @@ function Write-Info([string]$msg)  { Write-Host $msg -ForegroundColor Cyan }
 function Write-Warn([string]$msg)  { Write-Host $msg -ForegroundColor Yellow }
 function Write-Err ([string]$msg)  { Write-Host $msg -ForegroundColor Red }
 function Write-Good([string]$msg)  { Write-Host $msg -ForegroundColor Green }
+
+# Detect Group Policy WinRM/Firewall settings
+function Test-GPOWinRMPolicies {
+    param([string]$ComputerName)
+    
+    try {
+        # Check for domain-enforced WinRM policies via registry
+        $gpoWinRM = Invoke-Command -ComputerName $ComputerName -ScriptBlock {
+            $policies = @()
+            $regPath = 'HKLM:\Software\Policies\Microsoft\Windows\WinRM'
+            if (Test-Path $regPath) {
+                $policies += Get-ItemProperty -Path $regPath -ErrorAction SilentlyContinue
+            }
+            return @( $policies | Where-Object { $_ } )
+        } -ErrorAction Stop
+        
+        if ($gpoWinRM.Count -gt 0) {
+            return $true
+        }
+    } catch {
+        # If we can't check, assume no GPO (err on side of caution)
+        return $false
+    }
+    
+    return $false
+}
 
 # Initialize logging
 function Initialize-Logging {
@@ -199,6 +378,11 @@ $script:LogFile = Initialize-Logging -LogPath $LogPath
 Write-Separator "Cluster-Aware Updating (CAU) Preparation Script"
 Write-Log "Script started by $([System.Security.Principal.WindowsIdentity]::GetCurrent().Name)"
 Write-Log "DryRun mode: $DryRun | BackupConfig: $BackupConfig | RestoreFromBackup: $RestoreFromBackup"
+Write-Log "EnforceStrictWinRMSecurity: $EnforceStrictWinRMSecurity | DetectGPOConflicts: $DetectGPOConflicts"
+Write-Log "PreserveLegacyListeners: $PreserveLegacyListeners"
+Write-Log ""
+Write-Log "NOTE: This script can make destructive changes. Always run with -DryRun first."
+Write-Log "      Review Discover-ClusterCAUReadiness.ps1 output before proceeding."
 
 # Pre-flight validation
 if (-not $SkipValidation) {
@@ -261,9 +445,35 @@ if (-not $SkipValidation) {
 
 Write-Log "Target Cluster Nodes: $($nodes -join ', ')"
 
+# GPO Conflict Detection
+if ($DetectGPOConflicts) {
+    Write-Separator "CHECKING FOR GROUP POLICY CONFLICTS"
+    Write-Log "Scanning for Group Policy WinRM/Firewall settings..." "INFO"
+    
+    $gpoConflicts = @()
+    foreach ($n in $nodes) {
+        try {
+            if (Test-GPOWinRMPolicies -ComputerName $n) {
+                $gpoConflicts += $n
+                Write-Log "  ⚠ GPO WinRM policies detected on $n" "WARN"
+            }
+        } catch {
+            Write-Log "  Could not check GPO on $n (continuing anyway)" "WARN"
+        }
+    }
+    
+    if ($gpoConflicts.Count -gt 0) {
+        Write-Log "" "INFO"
+        Write-Log "WARNING: Group Policy WinRM settings found on $($gpoConflicts.Count) node(s)" "WARN"
+        Write-Log "Local changes made by this script may be overwritten at next GPO refresh (90-120 min)" "WARN"
+        Write-Log "RECOMMENDATION: Coordinate with domain admins to implement changes via GPO instead" "WARN"
+        Write-Log "This is more reliable and maintainable than local script modifications" "WARN"
+    }
+}
+
 # Remote script to configure WinRM/PSRemoting on each node
 $configureNode = {
-    param([switch]$SetDelayed, [switch]$DryRunMode, [switch]$BackupCfg)
+    param([switch]$SetDelayed, [switch]$DryRunMode, [switch]$BackupCfg, [switch]$EnforceAuth, [switch]$PreserveLegacy)
 
     $ErrorActionPreference = 'Stop'
 
@@ -295,8 +505,18 @@ $configureNode = {
     }
 
     if (-not $DryRunMode) {
-        Write-Host "[$env:COMPUTERNAME] Enable PowerShell Remoting..." -ForegroundColor Cyan
-        Enable-PSRemoting -Force
+        # Check if PSRemoting is already enabled before calling Enable-PSRemoting -Force
+        $psRemotingEnabled = $false
+        try {
+            $psRemotingEnabled = @(Get-PSSessionConfiguration -ErrorAction SilentlyContinue).Count -gt 0
+        } catch {}
+        
+        if ($psRemotingEnabled) {
+            Write-Host "[$env:COMPUTERNAME] PowerShell Remoting already enabled" -ForegroundColor Green
+        } else {
+            Write-Host "[$env:COMPUTERNAME] Enable PowerShell Remoting..." -ForegroundColor Cyan
+            Enable-PSRemoting -Force
+        }
 
         Write-Host "[$env:COMPUTERNAME] Ensure WinRM service Auto & Running..." -ForegroundColor Cyan
         Set-Service -Name WinRM -StartupType Automatic
@@ -322,37 +542,62 @@ $configureNode = {
     }
 
     $hasStar = $httpListeners | Where-Object { $_.Address -eq '*' }
+    $ipBound = $httpListeners | Where-Object { $_.Address -ne '*' }
+    
     if (-not $hasStar) {
         Write-Host "[$env:COMPUTERNAME] No wildcard HTTP listener found, creating one..." -ForegroundColor Yellow
         if (-not $DryRunMode) {
-            foreach ($l in $httpListeners) {
-                Write-Host "[$env:COMPUTERNAME] Removing IP-bound HTTP listener ($($l.Address))" -ForegroundColor Yellow
-                Remove-Item -Path $l.PsPath -Recurse -Force -ErrorAction SilentlyContinue
+            if ($ipBound.Count -gt 0 -and -not $PreserveLegacy) {
+                Write-Host "[$env:COMPUTERNAME] WARNING: Removing IP-bound HTTP listeners:" -ForegroundColor Yellow
+                foreach ($l in $ipBound) {
+                    Write-Host "[$env:COMPUTERNAME]   - $($l.Address)" -ForegroundColor Yellow
+                    Remove-Item -Path $l.PsPath -Recurse -Force -ErrorAction SilentlyContinue
+                }
+            } elseif ($ipBound.Count -gt 0 -and $PreserveLegacy) {
+                Write-Host "[$env:COMPUTERNAME] PreserveLegacy mode: Keeping IP-bound listeners" -ForegroundColor Yellow
+                foreach ($l in $ipBound) {
+                    Write-Host "[$env:COMPUTERNAME]   - $($l.Address) [PRESERVED]" -ForegroundColor Green
+                }
             }
             New-Item -Path $listenersPath -Transport HTTP -Address * -Force | Out-Null
         }
     } else {
-        # Clean up any extra IP-bound HTTP listeners
-        $ipBound = $httpListeners | Where-Object { $_.Address -ne '*' }
+        # Wildcard listener exists
         if ($ipBound.Count -gt 0) {
-            Write-Host "[$env:COMPUTERNAME] Removing extra IP-bound HTTP listeners..." -ForegroundColor Yellow
+            Write-Host "[$env:COMPUTERNAME] Found extra IP-bound HTTP listeners:" -ForegroundColor Yellow
             foreach ($l in $ipBound) {
-                Write-Host "[$env:COMPUTERNAME] Removing IP-bound listener ($($l.Address))" -ForegroundColor Yellow
-                if (-not $DryRunMode) {
-                    Remove-Item -Path $l.PsPath -Recurse -Force -ErrorAction SilentlyContinue
+                Write-Host "[$env:COMPUTERNAME]   - $($l.Address)" -ForegroundColor Yellow
+            }
+            
+            if ($PreserveLegacy) {
+                Write-Host "[$env:COMPUTERNAME] PreserveLegacy mode: Keeping these listeners" -ForegroundColor Green
+            } else {
+                Write-Host "[$env:COMPUTERNAME] Removing extra IP-bound HTTP listeners..." -ForegroundColor Yellow
+                foreach ($l in $ipBound) {
+                    if (-not $DryRunMode) {
+                        Remove-Item -Path $l.PsPath -Recurse -Force -ErrorAction SilentlyContinue
+                    }
                 }
             }
         } else {
-            Write-Host "[$env:COMPUTERNAME] HTTP listener already properly configured" -ForegroundColor Green
+            Write-Host "[$env:COMPUTERNAME] HTTP listener already properly configured (wildcard only)" -ForegroundColor Green
         }
     }
 
     if (-not $DryRunMode) {
-        # Harden WinRM minimal settings: Kerberos only, no Basic, no unencrypted
-        Write-Host "[$env:COMPUTERNAME] Hardening WinRM security settings..." -ForegroundColor Cyan
-        Set-Item -Path WSMan:\localhost\Service\Auth\Basic -Value $false
-        Set-Item -Path WSMan:\localhost\Service\AllowUnencrypted -Value $false
-        Set-Item -Path WSMan:\localhost\Service\Auth\Kerberos -Value $true
+        if ($EnforceAuth) {
+            # Harden WinRM security settings: Kerberos only, no Basic, no unencrypted
+            Write-Host "[$env:COMPUTERNAME] WARNING: Enforcing strict security settings..." -ForegroundColor Yellow
+            Write-Host "[$env:COMPUTERNAME]   - Disabling Basic Authentication" -ForegroundColor Yellow
+            Write-Host "[$env:COMPUTERNAME]   - Disabling unencrypted traffic" -ForegroundColor Yellow
+            Write-Host "[$env:COMPUTERNAME]   This will break legacy monitoring tools!" -ForegroundColor Yellow
+            
+            Set-Item -Path WSMan:\localhost\Service\Auth\Basic -Value $false
+            Set-Item -Path WSMan:\localhost\Service\AllowUnencrypted -Value $false
+            Set-Item -Path WSMan:\localhost\Service\Auth\Kerberos -Value $true
+        } else {
+            Write-Host "[$env:COMPUTERNAME] Security hardening skipped (use -EnforceStrictWinRMSecurity to enable)" -ForegroundColor Cyan
+        }
 
         Write-Host "[$env:COMPUTERNAME] Enable firewall rules (WinRM HTTP-In & Remote Shutdown)..." -ForegroundColor Cyan
         Get-NetFirewallRule -DisplayGroup "Windows Remote Management" -ErrorAction SilentlyContinue | Enable-NetFirewallRule | Out-Null
@@ -390,7 +635,7 @@ $nodeResults = foreach ($n in $nodes) {
     Write-Log "Processing node: $n" "INFO"
     try {
         $result = Invoke-Command -ComputerName $n -ScriptBlock $configureNode `
-            -ArgumentList $DelayedAutoStartWinRM, $DryRun, $BackupConfig `
+            -ArgumentList $DelayedAutoStartWinRM, $DryRun, $BackupConfig, $EnforceStrictWinRMSecurity, $PreserveLegacyListeners `
             -ErrorAction Stop -TimeoutSec $CommandTimeout
         $result
         Write-Log "$n: Status=$($result.Status), WSMan=$($result.WSManValid)" "SUCCESS"
@@ -416,6 +661,11 @@ Write-Log "Node configuration complete: $($nodeResults.Count) nodes processed"
 
 if (-not $SkipNetworkRoleChanges) {
     Write-Separator "CONFIGURING CLUSTER NETWORK ROLES"
+    
+    Write-Log "⚠ WARNING: Cluster network role changes can cause downtime if misconfigured" "WARN"
+    Write-Log "Setting a network Role=0 means cluster heartbeats will NOT use that network" "WARN"
+    Write-Log "If you accidentally specify the wrong network, loss of quorum will occur" "WARN"
+    Write-Log "" "WARN"
     
     $networkErrors = @()
 
